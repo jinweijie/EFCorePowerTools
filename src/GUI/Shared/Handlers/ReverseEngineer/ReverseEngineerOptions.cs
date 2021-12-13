@@ -52,5 +52,6 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
 
         [IgnoreDataMember]
         public bool InstallNuGetPackage { get; set; }
+        public List<ColumnTypeMapping> ColumnTypeMappings { get; set; }
     }
 }

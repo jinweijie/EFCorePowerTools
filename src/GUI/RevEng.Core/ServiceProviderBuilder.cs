@@ -60,6 +60,7 @@ namespace RevEng.Core
                     provider.GetService<LoggingDefinitions>(),
                     provider.GetService<IModelRuntimeInitializer>(),
                     options.Tables,
+                    options.ColumnTypeMappings,
                     options.DatabaseType,
                     options.UseManyToManyEntity
                 ));
@@ -73,6 +74,7 @@ namespace RevEng.Core
                     provider.GetService<IScaffoldingTypeMapper>(),
                     provider.GetService<LoggingDefinitions>(),
                     options.Tables,
+                    options.ColumnTypeMappings,
                     options.DatabaseType
                ));
 #endif

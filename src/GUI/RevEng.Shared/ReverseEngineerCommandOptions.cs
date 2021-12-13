@@ -38,6 +38,7 @@ namespace RevEng.Shared
         public bool UseNoDefaultConstructor { get; set; }
         public bool FilterSchemas { get; set; }
         public List<SchemaInfo> Schemas { get; set; }
+        public List<ColumnTypeMapping> ColumnTypeMappings { get; set; }
         public bool RunCleanup { get; set; }
         public bool UseManyToManyEntity { get; set; }
         public bool UseMultipleSprocResultSets { get; set; }
