@@ -165,8 +165,21 @@ namespace EFCorePowerTools
                 return; 
             }
 
-            var itemName = (await VS.Solutions.GetActiveItemAsync()).Name;
-            menuCommand.Visible = IsConfigFile(itemName);
+            var project = await VS.Solutions.GetActiveProjectAsync();
+
+            if (project == null)
+            {
+                return;
+            }
+
+            var item = await VS.Solutions.GetActiveItemAsync();
+
+            if (item == null)
+            {
+                return;
+            }
+
+            menuCommand.Visible = IsConfigFile(item.Text) && project.IsCSharpProject();
 
             return;
         }
@@ -194,11 +207,7 @@ namespace EFCorePowerTools
                 return;
             }
 
-            menuCommand.Visible =
-                project.FullPath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase);
-                //TODO Report bug
-                //(await project.IsKindAsync(ProjectTypes.CSHARP)) ||
-                //(await project.IsKindAsync(ProjectTypes.DOTNET_CORE));
+            menuCommand.Visible = project.IsCSharpProject();
 
             return;
         }
@@ -217,8 +226,12 @@ namespace EFCorePowerTools
 
                 var item = await VS.Solutions.GetActiveItemAsync();
 
-                var itemName = item.Name;
-                if (!IsConfigFile(itemName))
+                if (item == null)
+                {
+                    return;
+                }
+
+                if (!IsConfigFile(item.Text))
                 {
                     return;
                 }

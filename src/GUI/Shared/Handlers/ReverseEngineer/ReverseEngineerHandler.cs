@@ -107,6 +107,7 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
                 }
 
                 options.ProjectPath = Path.GetDirectoryName(project.FullPath);
+                options.OptionsPath = Path.GetDirectoryName(optionsPath);
 
                 bool forceEdit = false;
 
@@ -143,6 +144,8 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
                     if (dbInfo == null)
                         return;
 
+                    VerifySQLServerRightsAndVersion(options);
+
                     await VS.StatusBar.ShowMessageAsync(ReverseEngineerLocale.LoadingDatabaseObjects);
 
                     if (!await LoadDataBaseObjectsAsync(options, dbInfo, namingOptionsAndPath))
@@ -158,8 +161,6 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
 
                     await SaveOptionsAsync(project, optionsPath, options, new Tuple<List<Schema>, string>(options.CustomReplacers, namingOptionsAndPath.Item2));
                 }
-
-                VerifySQLServerRightsAndVersion(options);
 
                 await GenerateFilesAsync(project, options, containsEfCoreReference);
 
@@ -384,6 +385,7 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
                 UseNullableReferences = options.UseNullableReferences,
                 UseNoObjectFilter = options.UseNoObjectFilter,
                 UseNoDefaultConstructor = options.UseNoDefaultConstructor,
+                UseManyToManyEntity = options.UseManyToManyEntity,
             };
 
             var modelDialog = _package.GetView<IModelingOptionsDialog>()
@@ -421,6 +423,7 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
             options.UseNoNavigations = modelingOptionsResult.Payload.UseNoNavigations;
             options.UseNoObjectFilter = modelingOptionsResult.Payload.UseNoObjectFilter;
             options.UseNoDefaultConstructor = modelingOptionsResult.Payload.UseNoDefaultConstructor;
+            options.UseManyToManyEntity = modelingOptionsResult.Payload.UseManyToManyEntity;
 
             return true;
         }
@@ -431,7 +434,8 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
 
             if (options.DatabaseType == DatabaseType.SQLServer && string.IsNullOrEmpty(options.Dacpac))
             {
-                if (options.ConnectionString.ToLowerInvariant().Contains(".database.windows.net"))
+                if (options.ConnectionString.ToLowerInvariant().Contains(".database.windows.net")
+                    && options.ConnectionString.ToLowerInvariant().Contains("active directory interactive"))
                 {
                     return;
                 }
@@ -458,10 +462,11 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
 
             if (options.UseHandleBars)
             {
-                DropTemplates(options.ProjectPath, options.CodeGenerationMode == CodeGenerationMode.EFCore5);
+                DropTemplates(options.OptionsPath, options.CodeGenerationMode);
             }
 
             options.UseNullableReferences = await project.IsNetFrameworkAsync() ? false : options.UseNullableReferences;
+            //TODO Disable for now - see #1164  await SetNullableAsync(options, project);
 
             await VS.StatusBar.StartAnimationAsync(StatusAnimation.Build);
             await VS.StatusBar.ShowMessageAsync(ReverseEngineerLocale.GeneratingCode);
@@ -514,7 +519,10 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
 
             await VS.StatusBar.ShowMessageAsync(string.Format(ReverseEngineerLocale.ReverseEngineerCompleted, duration.ToString("h\\:mm\\:ss")));
 
-            VSHelper.ShowMessage(errors);
+            if (errors != ReverseEngineerLocale.ModelGeneratedSuccesfully + Environment.NewLine)
+            {
+                VSHelper.ShowMessage(errors);
+            }
 
             if (revEngResult.EntityErrors.Count > 0)
             {
@@ -537,6 +545,11 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
 
             if (!File.Exists(optionsPath + ".ignore"))
             {
+                if (!Properties.Settings.Default.IncludeUiHintInConfig)
+                {
+                    options.UiHint = null;
+                }
+
                 File.WriteAllText(optionsPath, options.Write(Path.GetDirectoryName(project.FullPath)), Encoding.UTF8);
 
                 await project.AddExistingFilesAsync(new List<string> { optionsPath }.ToArray());
@@ -556,17 +569,40 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
             }
         }
 
-        private void DropTemplates(string projectPath, bool useEFCore5)
+        private void DropTemplates(string path, CodeGenerationMode codeGenerationMode)
         {
-            var zipName = useEFCore5 ? "CodeTemplates502.zip" : "CodeTemplates.zip";
+            string zipName;
+            switch (codeGenerationMode)
+            {
+                case CodeGenerationMode.EFCore5:
+                    zipName = "CodeTemplates502.zip";
+                    break;
+                case CodeGenerationMode.EFCore3:
+                    zipName = "CodeTemplates.zip";
+                    break;
+                case CodeGenerationMode.EFCore6:
+                    zipName = "CodeTemplates600.zip";
+                    break;
+                default:
+                    throw new ArgumentException($"Unsupported code generation mode: {codeGenerationMode}");
+            }
 
-            var toDir = Path.Combine(projectPath, "CodeTemplates");
-            var fromDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            var defaultZip = "CodeTemplates.zip";
+
+            var toDir = Path.Combine(path, "CodeTemplates");
+            
+            var userTemplateZip = Path.Combine(path, defaultZip);
+            var templateZip = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), zipName);
+
+            if (File.Exists(userTemplateZip))
+            {
+                templateZip = userTemplateZip;
+            }
 
             if (!Directory.Exists(toDir) || IsDirectoryEmpty(toDir))
             {
                 Directory.CreateDirectory(toDir);
-                ZipFile.ExtractToDirectory(Path.Combine(fromDir, zipName), toDir);
+                ZipFile.ExtractToDirectory(templateZip, toDir);
             }
         }
 
@@ -592,6 +628,18 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
 
             var builder = new TableListBuilder(dbInfo.ConnectionString, dbInfo.DatabaseType, schemas);
             return await builder.GetTableDefinitionsAsync(codeGenerationMode);
+        }
+
+        private async Task<bool> SetNullableAsync(ReverseEngineerOptions options, Project project)
+        {
+            var nullable = await project.GetAttributeAsync("Nullable");
+            if (string.Equals(nullable, "enable", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(nullable, "annotations", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            
+            return await project.IsNetFrameworkAsync() ? false : options.UseNullableReferences;
         }
     }
 }

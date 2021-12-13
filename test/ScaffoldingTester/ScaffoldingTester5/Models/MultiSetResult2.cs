@@ -5,11 +5,11 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ScaffoldingTester.Models
 {
-    public partial class SpacesResult
+    public partial class MultiSetResult2
     {
-        [Column("ID Results Log")]
-        public string IDResultsLog { get; set; }
-        public string Sector { get; set; }
-        public string @event { get; set; }
+        public int CategoryID { get; set; }
+        public string CategoryName { get; set; }
+        public string Description { get; set; }
+        public byte[] Picture { get; set; }
     }
 }

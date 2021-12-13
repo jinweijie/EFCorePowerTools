@@ -64,17 +64,28 @@ namespace RevEng.Core.Modules
 
             foreach (var routine in model.Routines.Where(r => !(r is Function f) || !f.IsScalar))
             {
-                var typeName = GenerateIdentifierName(routine, model) + "Result";
+                int i = 1;
 
-                var classContent = WriteResultClass(routine, scaffolderOptions, typeName);
-
-                result.AdditionalFiles.Add(new ScaffoldedFile
+                foreach (var resultSet in routine.Results)
                 {
-                    Code = classContent,
-                    Path = scaffolderOptions.UseSchemaFolders
-                            ? Path.Combine(routine.Schema, $"{typeName}.cs")
-                            : $"{typeName}.cs"
-                });
+                    var suffix = string.Empty;
+                    if (routine.Results.Count > 1)
+                    {
+                        suffix = $"{i++}";
+                    }
+
+                    var typeName = GenerateIdentifierName(routine, model) + "Result" + suffix;
+
+                    var classContent = WriteResultClass(resultSet, scaffolderOptions, typeName);
+
+                    result.AdditionalFiles.Add(new ScaffoldedFile
+                    {
+                        Code = classContent,
+                        Path = scaffolderOptions.UseSchemaFolders
+                                ? Path.Combine(routine.Schema, $"{typeName}.cs")
+                                : $"{typeName}.cs"
+                    });
+                }
             }
 
             var dbContext = WriteDbContext(scaffolderOptions, model);
@@ -97,7 +108,7 @@ namespace RevEng.Core.Modules
 
         protected abstract string WriteDbContext(ModuleScaffolderOptions scaffolderOptions, RoutineModel model);
 
-        private string WriteResultClass(Routine routine, ModuleScaffolderOptions options, string name)
+        private string WriteResultClass(List<ModuleResultElement> resultElements, ModuleScaffolderOptions options, string name)
         {
             var @namespace = options.ModelNamespace;
 
@@ -120,7 +131,7 @@ namespace RevEng.Core.Modules
 
             using (_sb.Indent())
             {
-                GenerateClass(routine, name, options.NullableReferences);
+                GenerateClass(resultElements, name, options.NullableReferences);
             }
 
             _sb.AppendLine("}");
@@ -128,22 +139,22 @@ namespace RevEng.Core.Modules
             return _sb.ToString();
         }
 
-        private void GenerateClass(Routine routine, string name, bool nullableReferences)
+        private void GenerateClass(List<ModuleResultElement> resultElements, string name, bool nullableReferences)
         {
             _sb.AppendLine($"public partial class {name}");
             _sb.AppendLine("{");
 
             using (_sb.Indent())
             {
-                GenerateProperties(routine, nullableReferences);
+                GenerateProperties(resultElements, nullableReferences);
             }
 
             _sb.AppendLine("}");
         }
 
-        private void GenerateProperties(Routine routine, bool nullableReferences)
+        private void GenerateProperties(List<ModuleResultElement> resultElements, bool nullableReferences)
         {
-            foreach (var property in routine.ResultElements.OrderBy(e => e.Ordinal))
+            foreach (var property in resultElements.OrderBy(e => e.Ordinal))
             {
                 var propertyNames = GeneratePropertyName(property.Name);
 
@@ -300,9 +311,6 @@ namespace RevEng.Core.Modules
 "volatile",
 "while",
         };
-
-
-
 
         private string GenerateUniqueName(Routine routine, RoutineModel model)
         {

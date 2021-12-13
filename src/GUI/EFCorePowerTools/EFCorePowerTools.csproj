@@ -198,6 +198,10 @@
     <Content Include="CodeTemplates501.zip">
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
+    <None Include="app.config" />
+    <Content Include="CodeTemplates600.zip">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <None Include="Key.snk" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
@@ -448,8 +452,8 @@
   <ItemGroup>
     <PackageReference Include="AdysTech.CredentialManager" Version="2.3.0" />
     <PackageReference Include="Ben.Demystifier" Version="0.4.1" />
-    <PackageReference Include="Community.VisualStudio.Toolkit">
-      <Version>16.0.76.288-pre</Version>
+    <PackageReference Include="Community.VisualStudio.Toolkit.16">
+      <Version>16.0.325</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.CSharp">
       <Version>4.7.0</Version>

@@ -5,7 +5,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ScaffoldingTester.Models
 {
-    public partial class TempObjectsResult
+    public partial class OutputScenariosResult
     {
+        public int Col0 { get; set; }
     }
 }

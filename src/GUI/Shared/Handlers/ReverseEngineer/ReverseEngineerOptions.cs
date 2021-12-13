@@ -13,6 +13,8 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
         [IgnoreDataMember]
         public string ProjectPath { get; set; }
         public string OutputPath { get; set; }
+        [IgnoreDataMember]
+        public string OptionsPath { get; set; }
         public string OutputContextPath { get; set; }
         public bool UseSchemaFolders { get; set; }
         public string ProjectRootNamespace { get; set; }
@@ -43,13 +45,13 @@ namespace EFCorePowerTools.Handlers.ReverseEngineer
         public bool UseNoNavigations { get; set; }
         public bool UseNoObjectFilter { get; set; }
         public bool UseNoDefaultConstructor { get; set; }
+        public bool UseManyToManyEntity { get; set; }
         public CodeGenerationMode CodeGenerationMode { get; set; }
         public string UiHint { get; set; }
         public List<SchemaInfo> Schemas { get; set; }
 
         [IgnoreDataMember]
         public bool InstallNuGetPackage { get; set; }
-
         public List<ColumnTypeMapping> ColumnTypeMappings { get; set; }
     }
 }

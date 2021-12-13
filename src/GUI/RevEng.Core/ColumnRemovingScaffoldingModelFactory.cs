@@ -21,11 +21,12 @@ namespace RevEng.Core
     public class ColumnRemovingScaffoldingModelFactory : RelationalScaffoldingModelFactory
     {
         private readonly List<SerializationTableModel> _tables;
-        private readonly List<ColumnTypeMapping> _columnTypeMappings;
+        private readonly List<ColumnTypeMapping> _columnTypeMappings = null;
         private readonly DatabaseType _databaseType;
-
 #if CORE60
-        public ColumnRemovingScaffoldingModelFactory([NotNull] IOperationReporter reporter, [NotNull] ICandidateNamingService candidateNamingService, [NotNull] IPluralizer pluralizer, [NotNull] ICSharpUtilities cSharpUtilities, [NotNull] IScaffoldingTypeMapper scaffoldingTypeMapper, [NotNull] LoggingDefinitions loggingDefinitions, [NotNull] IModelRuntimeInitializer modelRuntimeInitializer, List<SerializationTableModel> tables, List<ColumnTypeMapping> columnTypeMappings, DatabaseType databaseType) :
+        private readonly bool _ignoreManyToMany;
+
+        public ColumnRemovingScaffoldingModelFactory([NotNull] IOperationReporter reporter, [NotNull] ICandidateNamingService candidateNamingService, [NotNull] IPluralizer pluralizer, [NotNull] ICSharpUtilities cSharpUtilities, [NotNull] IScaffoldingTypeMapper scaffoldingTypeMapper, [NotNull] LoggingDefinitions loggingDefinitions, [NotNull] IModelRuntimeInitializer modelRuntimeInitializer, List<SerializationTableModel> tables, List<ColumnTypeMapping> columnTypeMappings, DatabaseType databaseType, bool ignoreManyToMany) :
             base(reporter, candidateNamingService, pluralizer, cSharpUtilities, scaffoldingTypeMapper, loggingDefinitions, modelRuntimeInitializer)
 #else
         public ColumnRemovingScaffoldingModelFactory([NotNull] IOperationReporter reporter, [NotNull] ICandidateNamingService candidateNamingService, [NotNull] IPluralizer pluralizer, [NotNull] ICSharpUtilities cSharpUtilities, [NotNull] IScaffoldingTypeMapper scaffoldingTypeMapper, [NotNull] LoggingDefinitions loggingDefinitions, List<SerializationTableModel> tables, List<ColumnTypeMapping> columnTypeMappings, DatabaseType databaseType) :
@@ -33,8 +34,10 @@ namespace RevEng.Core
 #endif
         {
             _tables = tables;
-            _columnTypeMappings = columnTypeMappings;
             _databaseType = databaseType;
+#if CORE60
+            _ignoreManyToMany = ignoreManyToMany;
+#endif
         }
 
         protected override EntityTypeBuilder VisitTable(ModelBuilder modelBuilder, DatabaseTable table)
@@ -67,13 +70,38 @@ namespace RevEng.Core
             return base.VisitTable(modelBuilder, table);
         }
 
+#if CORE60
+        protected override ModelBuilder VisitForeignKeys(ModelBuilder modelBuilder, IList<DatabaseForeignKey> foreignKeys)
+        {
+            if (_ignoreManyToMany)
+            {
+                foreach (var fk in foreignKeys)
+                {
+                    VisitForeignKey(modelBuilder, fk);
+                }
+
+                foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+                {
+                    foreach (var foreignKey in entityType.GetForeignKeys())
+                    {
+                        AddNavigationProperties(foreignKey);
+                    }
+                }
+
+                return modelBuilder;
+            }
+
+            return base.VisitForeignKeys(modelBuilder, foreignKeys);
+        }
+#endif
+
         protected override TypeScaffoldingInfo GetTypeScaffoldingInfo(DatabaseColumn column)
         {
             if (_columnTypeMappings == null || _columnTypeMappings.Count == 0)
                 return base.GetTypeScaffoldingInfo(column);
 
             var mapping = _columnTypeMappings.FirstOrDefault(_ => _.StoreType == column.StoreType);
-            if(mapping == null)
+            if (mapping == null)
                 return base.GetTypeScaffoldingInfo(column);
 
             var clrType = Type.GetType(mapping.ClrType);

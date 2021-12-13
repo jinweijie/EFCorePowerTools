@@ -112,7 +112,7 @@ namespace RevEng.Core
                 RemoveFragments(filePaths.ContextFile, options.ContextClassName, options.IncludeConnectionString, options.UseNoDefaultConstructor);
                 if (!options.UseHandleBars)
                 {
-                    PostProcess(filePaths.ContextFile);
+                    PostProcess(filePaths.ContextFile, options.UseNullableReferences);
                 }
 
                 entityTypeConfigurationPaths = SplitDbContext(filePaths.ContextFile, options.UseDbContextSplitting, contextNamespace, options.UseNullableReferences);
@@ -128,13 +128,16 @@ namespace RevEng.Core
             {
                 foreach (var file in filePaths.AdditionalFiles)
                 {
-                    PostProcess(file);
+                    PostProcess(file, options.UseNullableReferences);
                 }
             }
 
-            var cleanUpPaths = CreateCleanupPaths(procedurePaths, functionPaths, filePaths);
+            if (options.RunCleanup)
+            {
+                var cleanUpPaths = CreateCleanupPaths(procedurePaths, functionPaths, filePaths);
 
-            CleanUp(cleanUpPaths, entityTypeConfigurationPaths, outputDir);
+                CleanUp(cleanUpPaths, entityTypeConfigurationPaths, outputDir);
+            }
 
             var allfiles = filePaths.AdditionalFiles.ToList();
             if (procedurePaths != null)
@@ -249,15 +252,26 @@ namespace RevEng.Core
             File.WriteAllLines(contextFile, finalLines, Encoding.UTF8);
         }
 
-        private static void PostProcess(string file)
+        private static void PostProcess(string file, bool useNullable)
         {
             if (string.IsNullOrEmpty(file))
             {
                 return;
             }
 
+            var header = PathHelper.Header;
+
+            if (useNullable)
+            {
+                header = $"{header}{Environment.NewLine}#nullable enable";
+            }
+            else
+            {
+                header = $"{header}{Environment.NewLine}#nullable disable";
+            }
+
             var text = File.ReadAllText(file, Encoding.UTF8);
-            File.WriteAllText(file, PathHelper.Header
+            File.WriteAllText(file, header
                 + Environment.NewLine
                 + text.Replace(";Command Timeout=300", string.Empty, StringComparison.OrdinalIgnoreCase)
                 .Replace(";Trust Server Certificate=True", string.Empty, StringComparison.OrdinalIgnoreCase)

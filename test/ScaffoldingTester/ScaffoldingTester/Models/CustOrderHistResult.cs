@@ -3,10 +3,11 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace ConsoleApp.Models
+namespace ScaffoldingTester.Models
 {
-    public partial class GetTitlesResult
+    public partial class CustOrderHistResult
     {
-        public string AlbumTitle { get; set; }
+        public string ProductName { get; set; }
+        public int? Total { get; set; }
     }
 }

@@ -20,25 +20,6 @@ namespace RevEng.Core.Procedures
     {
         private const string parameterPrefix = "parameter";
 
-        private static readonly ISet<SqlDbType> _scaleTypes = new HashSet<SqlDbType>
-        {
-            SqlDbType.DateTimeOffset,
-            SqlDbType.DateTime2,
-            SqlDbType.Time,
-            SqlDbType.Decimal,
-        };
-
-        private static readonly ISet<SqlDbType> _lengthRequiredTypes = new HashSet<SqlDbType>
-        {
-            SqlDbType.Binary,
-            SqlDbType.VarBinary,
-            SqlDbType.Char,
-            SqlDbType.VarChar,
-            SqlDbType.NChar,
-            SqlDbType.NVarChar,
-        };
-
-
         public SqlServerStoredProcedureScaffolder([NotNull] ICSharpHelper code)
             : base(code)
         {
@@ -71,15 +52,34 @@ namespace RevEng.Core.Procedures
 
             _sb.AppendLine(PathHelper.Header);
 
-            _sb.AppendLine("using Microsoft.EntityFrameworkCore;");
-            _sb.AppendLine("using Microsoft.Data.SqlClient;");
-            _sb.AppendLine("using System;");
-            _sb.AppendLine("using System.Collections.Generic;");
-            //To support System.Data.DataTable
-            _sb.AppendLine("using System.Data;");
-            _sb.AppendLine("using System.Threading;");
-            _sb.AppendLine("using System.Threading.Tasks;");
-            _sb.AppendLine($"using {procedureScaffolderOptions.ModelNamespace};");
+            var usings = new List<string>()
+            {
+                "using Microsoft.EntityFrameworkCore",
+                "using Microsoft.Data.SqlClient",
+                "using System",
+                "using System.Collections.Generic",
+                "using System.Data",
+                "using System.Threading",
+                "using System.Threading.Tasks",
+                $"using {procedureScaffolderOptions.ModelNamespace}",
+            };
+
+            if (model.Routines.Any(r => r.SupportsMultipleResultSet))
+            {
+                usings.AddRange(new List<string>()
+                {
+                    "using Dapper",
+                    "using Microsoft.EntityFrameworkCore.Storage",
+                    "using System.Linq",
+                });    
+            }
+
+            usings.Sort();
+
+            foreach (var statement in usings)
+            {
+                _sb.AppendLine($"{statement};");
+            }
 
             _sb.AppendLine();
             _sb.AppendLine($"namespace {procedureScaffolderOptions.ContextNamespace}");
@@ -151,12 +151,67 @@ namespace RevEng.Core.Procedures
                     GenerateProcedure(procedure, model);
                 }
 
+                if (model.Routines.Any(r => r.SupportsMultipleResultSet))
+                {
+                    GenerateDapperSupport();
+                }
+
                 _sb.AppendLine("}");
             }
 
             _sb.AppendLine("}");
 
             return _sb.ToString();
+        }
+
+        private void GenerateDapperSupport()
+        {
+            _sb.AppendLine();
+            using (_sb.Indent())
+            {
+                _sb.AppendLine("private static DynamicParameters CreateDynamic(SqlParameter[] sqlParameters)");
+                _sb.AppendLine("{");
+                using (_sb.Indent())
+                {
+                    _sb.AppendLine("var dynamic = new DynamicParameters();");
+                    _sb.AppendLine("foreach (var sqlParameter in sqlParameters)");
+                    _sb.AppendLine("{");
+                    using (_sb.Indent())
+                    {
+                        _sb.AppendLine("dynamic.Add(sqlParameter.ParameterName, sqlParameter.Value, sqlParameter.DbType, sqlParameter.Direction, sqlParameter.Size, sqlParameter.Precision, sqlParameter.Scale);");
+                    }
+                    _sb.AppendLine("}");
+                    _sb.AppendLine();
+                    _sb.AppendLine("return dynamic;");
+                }
+                _sb.AppendLine("}");
+            }
+
+            _sb.AppendLine();
+
+            using (_sb.Indent())
+            {
+                _sb.AppendLine("private async Task<SqlMapper.GridReader> GetMultiReaderAsync(DbContext db, DynamicParameters dynamic, string sql)");
+                _sb.AppendLine("{");
+                using (_sb.Indent())
+                {
+                    _sb.AppendLine("IDbTransaction tran = null;");
+                    _sb.AppendLine("if (db.Database.CurrentTransaction is IDbContextTransaction ctxTran)");
+                    _sb.AppendLine("{");
+                    using (_sb.Indent())
+                    {
+                        _sb.AppendLine("tran = ctxTran.GetDbTransaction();");
+                    }
+                    _sb.AppendLine("}");
+                    _sb.AppendLine();
+                    _sb.AppendLine("return await ((IDbConnection)db.Database.GetDbConnection())");
+                    using (_sb.Indent())
+                    {
+                        _sb.AppendLine(".QueryMultipleAsync(sql, dynamic, tran, db.Database.GetCommandTimeout(), CommandType.StoredProcedure);");
+                    }
+                }
+                _sb.AppendLine("}");
+            }
         }
 
         private void GenerateProcedure(Routine procedure, RoutineModel model)
@@ -177,9 +232,11 @@ namespace RevEng.Core.Procedures
 
             string fullExec = GenerateProcedureStatement(procedure, retValueName);
 
+            var multiResultId = GenerateMultiResultId(procedure, model);
+
             var identifier = GenerateIdentifierName(procedure, model);
 
-            var line = GenerateMethodSignature(procedure, outParams, paramStrings, retValueName, outParamStrings, identifier);
+            var line = GenerateMethodSignature(procedure, outParams, paramStrings, retValueName, outParamStrings, identifier, multiResultId);
 
             using (_sb.Indent())
             {
@@ -192,7 +249,7 @@ namespace RevEng.Core.Procedures
                 {
                     foreach (var parameter in allOutParams)
                     {
-                        GenerateParameterVar(parameter);
+                        GenerateParameterVar(parameter, procedure);
                     }
 
                     _sb.AppendLine();
@@ -209,20 +266,40 @@ namespace RevEng.Core.Procedures
                             }
                             else
                             {
-                                GenerateParameter(parameter);
+                                GenerateParameter(parameter, procedure);
                             }
                             _sb.AppendLine(",");
                         }
                     }
                     _sb.AppendLine("};");
 
-                    if (procedure.HasValidResultSet && procedure.ResultElements.Count == 0)
+                    if (procedure.HasValidResultSet && procedure.Results[0].Count == 0)
                     {
                         _sb.AppendLine($"var _ = await _context.Database.ExecuteSqlRawAsync({fullExec});");
                     }
                     else
                     {
-                        _sb.AppendLine($"var _ = await _context.SqlQueryAsync<{identifier}Result>({fullExec});");
+                        if (procedure.SupportsMultipleResultSet)
+                        {
+                            _sb.AppendLine();
+                            _sb.AppendLine("var dynamic = CreateDynamic(sqlParameters);");
+                            _sb.AppendLine($"{multiResultId}  _;");
+                            _sb.AppendLine();
+                            _sb.AppendLine($"using (var reader = await GetMultiReaderAsync(_context, dynamic, \"[{procedure.Schema}].[{procedure.Name}]\"))");
+                            _sb.AppendLine("{");
+
+                            using (_sb.Indent())
+                            {
+                                var statements = GenerateMultiResultStatement(procedure, model);
+                                _sb.AppendLine($"_ = {statements};");
+                            }
+
+                            _sb.AppendLine("}");
+                        }
+                        else
+                        {
+                            _sb.AppendLine($"var _ = await _context.SqlQueryAsync<{identifier}Result>({fullExec});");
+                        }
                     }
 
                     _sb.AppendLine();
@@ -232,8 +309,14 @@ namespace RevEng.Core.Procedures
                         _sb.AppendLine($"{parameter.Name}.SetValue({parameterPrefix}{parameter.Name}.Value);");
                     }
 
-                    _sb.AppendLine($"{retValueName}?.SetValue({parameterPrefix}{retValueName}.Value);");
-
+                    if (procedure.SupportsMultipleResultSet)
+                    {
+                        _sb.AppendLine($"{retValueName}?.SetValue(dynamic.Get<int>(\"{retValueName}\"));");
+                    }
+                    else
+                    {
+                        _sb.AppendLine($"{retValueName}?.SetValue({parameterPrefix}{retValueName}.Value);");
+                    }
                     _sb.AppendLine();
 
                     _sb.AppendLine("return _;");
@@ -241,6 +324,46 @@ namespace RevEng.Core.Procedures
 
                 _sb.AppendLine("}");
             }
+        }
+
+        private string GenerateMultiResultId(Routine procedure, RoutineModel model)
+        {
+            if (procedure.Results.Count == 1)
+            {
+                return null;
+            }
+
+            var ids = new List<string>();
+            int i = 1;
+            foreach (var resultSet in procedure.Results)
+            {
+                var suffix = $"{i++}";
+
+                var typeName = GenerateIdentifierName(procedure, model) + "Result" + suffix;
+                ids.Add($"List<{typeName}> Result{suffix}");
+            }
+
+            return $"({string.Join(", ", ids)})";
+        }
+
+        private string GenerateMultiResultStatement(Routine procedure, RoutineModel model)
+        {
+            if (procedure.Results.Count == 1)
+            {
+                return null;
+            }
+
+            var ids = new List<string>();
+            int i = 1;
+            foreach (var resultSet in procedure.Results)
+            {
+                var suffix = $"{i++}";
+
+                var typeName = GenerateIdentifierName(procedure, model) + "Result" + suffix;
+                ids.Add($"(await reader.ReadAsync<{typeName}>()).ToList()");
+            }
+
+            return $"({string.Join(", ", ids)})";
         }
 
         private static string GenerateProcedureStatement(Routine procedure, string retValueName)
@@ -257,17 +380,24 @@ namespace RevEng.Core.Procedures
             return fullExec;
         }
 
-        private static string GenerateMethodSignature(Routine procedure, List<ModuleParameter> outParams, IEnumerable<string> paramStrings, string retValueName, List<string> outParamStrings, string identifier)
+        private string GenerateMethodSignature(Routine procedure, List<ModuleParameter> outParams, IEnumerable<string> paramStrings, string retValueName, List<string> outParamStrings, string identifier, string multiResultId)
         {
             string returnType;
 
-            if (procedure.HasValidResultSet && procedure.ResultElements.Count == 0)
+            if (procedure.HasValidResultSet && procedure.Results[0].Count == 0)
             {
                 returnType = $"Task<int>";
             }
             else
             {
-                returnType = $"Task<List<{identifier}Result>>";
+                if (procedure.SupportsMultipleResultSet)
+                {
+                    returnType = $"Task<{multiResultId}>";
+                }
+                else
+                {
+                    returnType = $"Task<List<{identifier}Result>>";
+                }
             }
 
             var line = $"public virtual async {returnType} {identifier}Async({string.Join(", ", paramStrings)}";
@@ -294,14 +424,14 @@ namespace RevEng.Core.Procedures
             return line;
         }
 
-        private void GenerateParameterVar(ModuleParameter parameter)
+        private void GenerateParameterVar(ModuleParameter parameter, Routine procedure)
         {
             _sb.Append($"var {parameterPrefix}{parameter.Name} = ");
-            GenerateParameter(parameter);
+            GenerateParameter(parameter, procedure);
             _sb.AppendLine(";");
         }
 
-        private void GenerateParameter(ModuleParameter parameter)
+        private void GenerateParameter(ModuleParameter parameter, Routine procedure)
         {
             _sb.AppendLine("new SqlParameter");
             _sb.AppendLine("{");
@@ -312,7 +442,7 @@ namespace RevEng.Core.Procedures
             {
                 _sb.AppendLine($"ParameterName = \"{parameter.Name}\",");
 
-                if (_scaleTypes.Contains(sqlDbType))
+                if (sqlDbType.IsScaleType())
                 {
                     if (parameter.Precision > 0)
                     {
@@ -324,19 +454,41 @@ namespace RevEng.Core.Procedures
                     }
                 }
 
-                if (_lengthRequiredTypes.Contains(sqlDbType))
+                if (sqlDbType.IsVarTimeType())
+                {
+                    if (parameter.Scale > 0)
+                    {
+                        _sb.AppendLine($"Scale = {parameter.Scale},");
+                    }
+                }
+
+                if (sqlDbType.IsLengthRequiredType())
                 {
                     _sb.AppendLine($"Size = {parameter.Length},");
                 }
 
-                if (parameter.Output)
+                if (!parameter.IsReturnValue)
                 {
-                    _sb.AppendLine("Direction = System.Data.ParameterDirection.Output,");
+                    if (parameter.Output)
+                    {
+                        _sb.AppendLine("Direction = System.Data.ParameterDirection.InputOutput,");
+                        AppendValue(parameter);
+                    }
+                    else
+                    {
+                        AppendValue(parameter);
+                    }
                 }
                 else
                 {
-                    var value = parameter.Nullable ? $"{parameter.Name} ?? Convert.DBNull" : $"{parameter.Name}";
-                    _sb.AppendLine($"Value = {value},");
+                    if (procedure.SupportsMultipleResultSet)
+                    {
+                        _sb.AppendLine("Direction = System.Data.ParameterDirection.ReturnValue,");
+                    }
+                    else
+                    {
+                        _sb.AppendLine("Direction = System.Data.ParameterDirection.Output,");
+                    }
                 }
 
                 _sb.AppendLine($"SqlDbType = System.Data.SqlDbType.{sqlDbType},");
@@ -348,6 +500,17 @@ namespace RevEng.Core.Procedures
             }
 
             _sb.Append("}");
+        }
+
+        private void AppendValue(ModuleParameter parameter)
+        {
+
+            var value = parameter.Nullable ? $"{parameter.Name} ?? Convert.DBNull" : $"{parameter.Name}";
+            if (parameter.Output)
+            {
+                value = parameter.Nullable ? $"{parameter.Name}?._value ?? Convert.DBNull" : $"{parameter.Name}?._value";
+            }
+            _sb.AppendLine($"Value = {value},");
         }
     }
 }

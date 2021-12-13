@@ -11,73 +11,31 @@ namespace ScaffoldingTester
         {
             using (var db = new NorthwindContext())
             {
-                var res = db.Shippers.ToList();
+                var retVal = new OutputParameter<int>();
+                var multi = await db.GetProcedures().MultiSetAsync(new DateTime(2021, 12, 24), 7.6m, retVal);
 
-                //var procs = new NorthwindContextProcedures(db);
+                //var list = new[] { "ALFKI", "BERGS", "VAFFE" };
 
-                var sret = new OutputParameter<string>();
-                var returned = new OutputParameter<string>();
-                await db.GetProcedures().OutputFailAsync(sret, returned);
-                if (sret.Value != "yes")
+                var list = new[] { 10253L, 10255L, 10260L };
+
+                var customersQuery = db.Orders
+                    .Where(s => db.AsSplit(list).Contains(s.OrderId))
+                    .Select(o => new { o.OrderDate, o.CustomerId });
+
+#if DEBUG
+                Console.WriteLine(customersQuery.ToQueryString());
+#endif
+                var result = customersQuery.ToList();
+
+                foreach (var item in result)
                 {
-                    Console.Error.WriteLine($"AssertEqual failed. Expected: \"yes\". Actual: {sret.Value}.");
+                    Console.WriteLine($"{item.CustomerId} : {item.OrderDate}");
                 }
 
-                var spacesResult = await db.GetProcedures().SpacesAsync();
-                if (spacesResult.Count != 1)
-                {
-                    Console.Error.WriteLine($"AssertEqual failed. Expected: 1. Actual: {spacesResult.Count}.");
-                }
-
-                var output1 = new OutputParameter<string>();
-                var output2 = new OutputParameter<string>();
-                var output3 = new OutputParameter<int>();
-                var result = await db.GetProcedures().TestMethodOutputNoResultAsync(0, null, output1, output2, output3);
-
-                var result2 = await db.GetProcedures().CustOrderHistDupeAsync("ALFKI");
-                if (result2.Count != 11)
-                {
-                    Console.Error.WriteLine($"AssertEqual failed. Expected: 11. Actual: {result2.Count}.");
-                }
-
-                var return1 = new OutputParameter<int>();
-                var test = await db.GetProcedures().ReturnValueAsync(return1);
-                if (return1.Value != 42)
-                {
-                    Console.Error.WriteLine($"AssertEqual failed. Expected: 42. Actual: {return1.Value}.");
-                }
-
-                var rowsResult = await db.GetProcedures().CategoryUpdateAsync("Beverages", 1);
-                if (rowsResult != 1)
-                {
-                    Console.Error.WriteLine($"AssertEqual failed. Expected: 1. Actual: {rowsResult}.");
-                }
-
-                var rowsResult2 = await db.GetProcedures().CategoryUpdateAsync("Beverages", int.MinValue);
-                if (rowsResult2 != 0)
-                {
-                    Console.Error.WriteLine($"AssertEqual failed. Expected: 0. Actual: {rowsResult2}.");
-                }
-
-                var udfTest = db.Categories
-                    .Where(c => c.CategoryName == NorthwindContext.GetCustInfo("x", null))
-                    .ToList();
-
-                var tvfTest = db.ProductsWithMinimumInStock(5)
-                    .OrderBy(p => p.ProductName)
-                    .ToList();
-
-                var query = db.Suppliers
-                    .Where(s => db.Split("ALFKI;DADAD", ";").Any(split => split.Value == s.CompanyName));
-
-                var sql = query.ToQueryString();
-
-                var list = "ALFKI;DADAD";
-
-                var suppliers = db.Suppliers
-                    .Where(s => db.Split(list, ";").Any(split => split.Value == s.CompanyName))
-                    .ToList();
-
+                var productCount = new OutputParameter<int?>();
+                var description = new OutputParameter<string>();
+                var outputRes = db.GetProcedures()
+                    .OutputScenariosAsync(2021, productCount, description);
             }
         }
     }
