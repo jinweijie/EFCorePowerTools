@@ -34,6 +34,7 @@ namespace RevEng.Core
 #endif
         {
             _tables = tables;
+            _columnTypeMappings = columnTypeMappings;
             _databaseType = databaseType;
 #if CORE60
             _ignoreManyToMany = ignoreManyToMany;
