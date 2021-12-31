@@ -165,6 +165,8 @@ namespace EFCorePowerTools
                 return; 
             }
 
+            menuCommand.Visible = false;
+
             var project = await VS.Solutions.GetActiveProjectAsync();
 
             if (project == null)
@@ -180,8 +182,6 @@ namespace EFCorePowerTools
             }
 
             menuCommand.Visible = IsConfigFile(item.Text) && project.IsCSharpProject();
-
-            return;
         }
 
         private static bool IsConfigFile(string itemName)
@@ -200,6 +200,8 @@ namespace EFCorePowerTools
                 return;
             }
 
+            menuCommand.Visible = false;
+
             var project = await VS.Solutions.GetActiveProjectAsync();
 
             if (project == null)
@@ -208,8 +210,6 @@ namespace EFCorePowerTools
             }
 
             menuCommand.Visible = project.IsCSharpProject();
-
-            return;
         }
 
         private async void OnReverseEngineerConfigFileMenuInvokeHandler(object sender, EventArgs e)

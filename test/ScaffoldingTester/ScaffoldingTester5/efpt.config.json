@@ -42,6 +42,9 @@
          "ObjectType": 0
       },
       {
+         "ExcludedColumns": [
+            "ShippedDate"
+         ],
          "Name": "[dbo].[Orders]",
          "ObjectType": 0
       },
@@ -166,7 +169,7 @@
          "ObjectType": 1
       }
    ],
-   "UiHint": "DG-PF2WPPLD\\SQLEXPRESS.Northwind",
+   "UiHint": "DESKTOP-F14GQSD\\SQLEXPRESS.Northwind",
    "UseBoolPropertiesWithoutDefaultSql": true,
    "UseDatabaseNames": false,
    "UseDbContextSplitting": false,

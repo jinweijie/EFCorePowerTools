@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace EFCorePowerTools.Extensions
 {
-    internal static class EnvDTEExtensions
+    internal static class EnvDteExtensions
     {
         public static async Task<string> GetStartupProjectOutputPathAsync()
         {
@@ -165,8 +165,7 @@ namespace EFCorePowerTools.Extensions
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             return (await VS.Solutions.GetAllProjectsAsync())
-                .Where(p => p.FullPath == projectItemPath)
-                .SingleOrDefault();
+                .SingleOrDefault(p => p.FullPath == projectItemPath);
         }
     }
 }
